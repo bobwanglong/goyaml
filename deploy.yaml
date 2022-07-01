@@ -1,0 +1,154 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Name }}-pv
+spec:
+  accessModes:
+  - ReadWriteMany
+  capacity:
+    storage: 1Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: {{ .Name }}-pvc
+    namespace: {{ .Namespace }}
+  nfs:
+    path: {{ .NfsFilePath }}  #/data/nfs/baichuan/baichuan-apihealth/jobmaster/conf 
+    server: {{ .NfsServer }} #192.168.10.85 
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Name }}-pvc
+  namespace: {{ .Namespace }}
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  volumeMode: Filesystem
+  volumeName: {{ .Name }}-pv
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Name }}-configmap
+  namespace: {{ .Namespace }}
+  labels:
+    app: {{ .Name }}
+data:
+  USER: admin
+  PASSWORD: {{ GeneratePassword }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Name }} 
+  namespace: {{ .Namespace }}
+  labels:
+    app: {{ .Name }}
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: {{ .Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Name }}
+    spec:
+      containers:
+      - name: {{ .Name }}
+        image: {{ .Image }}
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh","-c","sleep 5"]
+        ports:
+        - containerPort: {{ .ContainerPort }}
+        readinessProbe:
+          tcpSocket:
+            port: {{ .ContainerPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: {{ .ContainerPort }}
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+        volumeMounts:
+        - name: timezone
+          mountPath: /etc/localtime
+      volumes:
+        - name: timezone
+          hostPath:
+            path: /usr/share/zoneinfo/Asia/Shanghai
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Name }}-svc
+  namespace: {{ .Namespace }}
+spec:
+  ports:
+    - port: {{ .ContainerPort }}
+  selector:
+    app: {{ .Name }}
+
+---
+
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Name }}-hpa-c
+  namespace: {{ .Namespace }}
+  labels:
+    app: {{ .Name }}-hpa-c
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Name }}
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      targetAverageUtilization: 80
+
+---
+
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Name }}-hpa-m
+  namespace: {{ .Namespace }}
+  labels:
+    app: {{ .Name }}-hpa-m
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Name }}
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: memory
+      targetAverageUtilization: 80
