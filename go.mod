@@ -13,5 +13,6 @@ require (
 require (
 	github.com/fatih/color v1.13.0
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/spf13/pflag v1.0.5 // indirect
 )
